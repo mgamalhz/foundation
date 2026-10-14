@@ -9,12 +9,14 @@ use Mgamalhz\Lifecycle\LifecycleServiceProvider;
 use Mgamalhz\Support\Actor;
 use Mgamalhz\Support\SupportServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
+use Spatie\Activitylog\ActivitylogServiceProvider;
 
 abstract class TestCase extends Orchestra
 {
     protected function getPackageProviders($app): array
     {
         return [
+            ActivitylogServiceProvider::class,
             SupportServiceProvider::class,
             AuditServiceProvider::class,
             LifecycleServiceProvider::class,
@@ -29,8 +31,9 @@ abstract class TestCase extends Orchestra
 
     protected function defineDatabaseMigrations(): void
     {
-        // The packages' own migrations (audit_logs, state_transitions).
+        // Package migrations (state_transitions) + activitylog's table.
         $this->artisan('migrate', ['--database' => 'testing'])->run();
+        (include __DIR__.'/../vendor/spatie/laravel-activitylog/database/migrations/create_activity_log_table.php.stub')->up();
 
         Schema::create('users', function (Blueprint $table) {
             $table->id();

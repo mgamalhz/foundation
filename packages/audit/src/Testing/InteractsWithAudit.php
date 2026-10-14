@@ -2,69 +2,67 @@
 
 namespace Mgamalhz\Audit\Testing;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Mgamalhz\Audit\Models\AuditLog;
 use PHPUnit\Framework\Assert;
 
 /**
- * Assertions for tests that change something an admin must be able to trace.
+ * Assertions for activity logged with spatie/laravel-activitylog.
  *
- *     $this->assertAudited($order, 'order.refunded', by: $admin, metadata: ['reason' => 'damaged']);
+ *     $this->assertActivityLogged($order, 'refunded', by: $admin, properties: ['reason' => 'damaged']);
+ *     $this->assertActivityNotLogged($order, 'refunded');
  */
 trait InteractsWithAudit
 {
     /**
-     * @param  array<string, mixed>|null  $metadata  subset that must be present in the entry's metadata
+     * @param  string  $event  the activity's `event` (e.g. "refunded")
+     * @param  Model|false|null  $by  a Model = that causer, false = no causer (the system), null = don't check
+     * @param  array<string, mixed>|null  $properties  subset that must be present in `properties`
      */
-    public function assertAudited(?Model $subject, string $action, Model|false|null $by = null, ?array $metadata = null): AuditLog
+    public function assertActivityLogged(?Model $subject, string $event, Model|false|null $by = null, ?array $properties = null): Model
     {
-        $query = AuditLog::query()->where('action', $action);
-
-        if ($subject !== null) {
-            $query->forSubject($subject);
-        }
+        $query = $this->activityQuery($subject)->where('event', $event);
 
         if ($by instanceof Model) {
-            $query->byActor($by);
+            $query->where('causer_type', $by->getMorphClass())->where('causer_id', $by->getKey());
         } elseif ($by === false) {
-            $query->whereNull('actor_id');
+            $query->whereNull('causer_id');
         }
 
-        $entries = $query->get();
-
-        if ($metadata !== null) {
-            $entries = $entries->filter(fn (AuditLog $log) => array_intersect_key($log->metadata ?? [], $metadata) == $metadata);
-        }
-
-        $recorded = AuditLog::query()->pluck('action')->unique()->implode(', ') ?: 'none';
-
-        Assert::assertNotEmpty(
-            $entries,
-            "Expected an audit entry [{$action}] but none matched. Actions recorded in this test: {$recorded}."
+        $matches = $query->get()->filter(
+            fn (Model $activity) => $properties === null
+                || array_intersect_key($activity->properties?->toArray() ?? [], $properties) == $properties
         );
 
-        return $entries->last();
+        $logged = $this->activityQuery($subject)->pluck('event')->filter()->unique()->implode(', ') ?: 'none';
+
+        Assert::assertNotEmpty(
+            $matches,
+            "Expected activity [{$event}] but none matched. Events logged".($subject ? ' for this subject' : '').": {$logged}."
+        );
+
+        return $matches->last();
     }
 
-    public function assertNotAudited(?Model $subject, string $action): void
+    public function assertActivityNotLogged(?Model $subject, string $event): void
     {
-        $query = AuditLog::query()->where('action', $action);
+        Assert::assertSame(
+            0,
+            $this->activityQuery($subject)->where('event', $event)->count(),
+            "Expected no activity [{$event}], but it was logged."
+        );
+    }
+
+    private function activityQuery(?Model $subject): Builder
+    {
+        /** @var class-string<Model> $model */
+        $model = config('activitylog.activity_model');
+        $query = $model::query();
 
         if ($subject !== null) {
-            $query->forSubject($subject);
+            $query->where('subject_type', $subject->getMorphClass())->where('subject_id', $subject->getKey());
         }
 
-        Assert::assertSame(0, $query->count(), "Expected no audit entry [{$action}], but one was recorded.");
-    }
-
-    public function assertAuditCount(int $expected, ?string $action = null): void
-    {
-        $query = AuditLog::query();
-
-        if ($action !== null) {
-            $query->where('action', $action);
-        }
-
-        Assert::assertSame($expected, $query->count());
+        return $query;
     }
 }

@@ -1,83 +1,68 @@
 ---
 name: audit-trail
-description: Use when a change must be traceable — admin/staff actions, money, permissions, approvals, data exports, deletions, anything a manager or a dispute might later ask "who did this and when?". Covers recording entries, before/after changes, actors in jobs, redaction and tests with mgamalhz/audit.
+description: Use when a change must be traceable — staff/admin actions, money, permissions, approvals, exports, deletions; anything a manager or a dispute may later ask "who did this and when?". Covers logging with spatie/laravel-activitylog plus this app's rules (redaction, immutability, actors in jobs) and test assertions.
 ---
 
-# Audit trail (mgamalhz/audit)
+# Audit trail (spatie/laravel-activitylog + mgamalhz/foundation)
 
-This app has **one** audit log for everything. Do not create feature-specific
-log tables (`order_logs`, `admin_activities`, ...) — record here.
+This app has **one** activity log. Do not create feature-specific log tables
+(`order_logs`, `admin_activities`, ...). Use activitylog's own API.
 
-## When to record
-
-Record when a human (or the system on their behalf) does something someone may
-need to trace later:
+## When to log
 
 - staff/admin actions: approve, reject, refund, ban, change role, export data
 - money: charges, refunds, payouts, price or discount changes
-- access: invites, role/permission changes, password resets by staff
+- access: invites, role/permission changes, staff-initiated password resets
 - deletions of business records
 
-Do **not** audit every read or every model save. State changes of models using
-`HasLifecycle` are audited automatically as `lifecycle.transitioned` — don't
-record them again.
+Do **not** log reads or every model save. Lifecycle state changes are logged
+automatically (`event = transitioned`, log `lifecycle`) — don't log them again.
 
 ## How
 
 ```php
-use Mgamalhz\Audit\Facades\Audit;
-
-// After the change is saved:
-Audit::record('order.refunded', $order, ['amount' => $amount, 'reason' => $reason]);
+activity()
+    ->performedOn($order)
+    ->event('refunded')                               // machine-readable, snake_case past tense
+    ->withProperties(['amount' => $amount, 'reason' => $reason])
+    ->log('Order refunded');                          // human-readable, may be Arabic
 ```
 
-On models with the `HasAuditTrail` trait:
+- Log **after** the change is saved, inside the same transaction.
+- The causer is the authenticated user. In jobs, commands and webhooks set it
+  with `Actor::as($admin, fn () => ...)`; when the system itself acts use
+  `Actor::asSystem(fn () => ...)` or `->causedByAnonymous()`.
+- `properties` is context (reason, amount, external reference), not a copy of
+  the model. Keys like `password`, `token`, `otp`, `iban`, `cvv` are redacted
+  automatically; never put card numbers or secrets there.
+- Entries are immutable: updating or deleting one throws. Retention is handled
+  by `php artisan activitylog:clean`.
+
+## Reading
 
 ```php
-$order->update(['total' => $newTotal]);
-$order->audit('order.repriced', ['reason' => $reason], withChanges: true); // stores before/after
-$order->auditTrail;                                                       // newest first
+Activity::forSubject($order)->latest()->get();
+Activity::causedBy($staff)->latest()->paginate();
+Activity::forEvent('refunded')->get();
 ```
 
-## Rules
-
-1. **Action names**: lowercase `subject.past_tense_verb` — `order.refunded`,
-   `staff.invited`, `payout.approved`. Anything else throws.
-2. **Record after saving**, inside the same transaction as the change, so a
-   rolled-back change leaves no entry. Unsaved subjects throw.
-3. **The actor** comes from the authenticated user. In jobs, commands and
-   webhooks pass it explicitly — `Actor::as($admin, fn () => ...)` — or
-   `actor: false` when the system itself acts.
-4. **Metadata is context, not a copy of the model**: reason, amount, external
-   reference. Keys like `password`, `token`, `otp`, `iban` are redacted
-   automatically; never put full card numbers or secrets in metadata.
-5. Entries are immutable. Never update or delete them.
-
-## Showing it
-
-```php
-AuditLog::query()->forSubject($order)->latest('id')->get();   // a record's history
-AuditLog::query()->byActor($staff)->latest('id')->paginate();  // what a staff member did
-AuditLog::query()->action('order.refunded')->get();
-```
-
-## Testing — required for every audited action
+## Testing — required for every logged action
 
 ```php
 use Mgamalhz\Audit\Testing\InteractsWithAudit;
 
 uses(InteractsWithAudit::class);
 
-it('audits refunds', function () {
+it('logs refunds', function () {
     $this->actingAs($admin)->post("/admin/orders/{$order->id}/refund", ['reason' => 'damaged']);
 
-    $this->assertAudited($order, 'order.refunded', by: $admin, metadata: ['reason' => 'damaged']);
+    $this->assertActivityLogged($order, 'refunded', by: $admin, properties: ['reason' => 'damaged']);
 });
 ```
 
 ## Done checklist
 
-- [ ] Every new staff/money/access action records one entry with a `subject.verb` name
-- [ ] Jobs and commands set the actor explicitly
+- [ ] Every new staff/money/access action logs one activity with a snake_case `event`
+- [ ] Jobs and commands set the actor with `Actor::as(...)`
 - [ ] No new feature-specific log tables
-- [ ] Tests assert the entry with `assertAudited`
+- [ ] Tests assert it with `assertActivityLogged`

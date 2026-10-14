@@ -3,13 +3,11 @@
 namespace Mgamalhz\Foundation\Tests\Fixtures;
 
 use Illuminate\Database\Eloquent\Model;
-use Mgamalhz\Audit\Concerns\HasAuditTrail;
 use Mgamalhz\Lifecycle\Concerns\HasLifecycle;
 use Mgamalhz\Lifecycle\StateMachine;
 
 class Order extends Model
 {
-    use HasAuditTrail;
     use HasLifecycle;
 
     protected $guarded = [];

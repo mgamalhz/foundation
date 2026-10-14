@@ -1,94 +1,75 @@
 <?php
 
-use Mgamalhz\Audit\Facades\Audit;
 use Mgamalhz\Audit\Testing\InteractsWithAudit;
 use Mgamalhz\Foundation\Tests\Fixtures\Order;
 use Mgamalhz\Foundation\Tests\Fixtures\User;
 use Mgamalhz\Support\Actor;
 use PHPUnit\Framework\AssertionFailedError;
+use Spatie\Activitylog\Models\Activity;
 
 uses(InteractsWithAudit::class);
 
 beforeEach(function () {
     $this->admin = User::create(['name' => 'Admin']);
-    $this->order = Order::create(['status' => 'pending', 'total' => 500]);
+    $this->order = Order::create(['total' => 500]);
 });
 
-it('records who did what to which record', function () {
+it('uses the authenticated user as the causer', function () {
     $this->actingAs($this->admin);
 
-    $log = Audit::record('order.flagged', $this->order, ['reason' => 'suspicious']);
+    activity()->performedOn($this->order)->event('flagged')->log('Order flagged');
 
-    expect($log->action)->toBe('order.flagged')
-        ->and($log->actor->is($this->admin))->toBeTrue()
-        ->and($log->subject->is($this->order))->toBeTrue()
-        ->and($log->metadata)->toBe(['reason' => 'suspicious']);
+    $this->assertActivityLogged($this->order, 'flagged', by: $this->admin);
 });
 
-it('records system actions with no actor', function () {
+it('uses the Actor set for jobs and commands as the causer', function () {
+    Actor::as($this->admin, fn () => activity()->performedOn($this->order)->event('exported')->log('Exported'));
+
+    $this->assertActivityLogged($this->order, 'exported', by: $this->admin);
+});
+
+it('logs nothing as the causer when the system acts', function () {
     $this->actingAs($this->admin);
 
-    $log = Audit::record('order.expired', $this->order, actor: false);
+    Actor::asSystem(fn () => activity()->performedOn($this->order)->event('expired')->log('Expired'));
 
-    expect($log->actor_id)->toBeNull();
+    $this->assertActivityLogged($this->order, 'expired', by: false);
 });
 
-it('uses the actor set explicitly for jobs and commands', function () {
-    $log = Actor::as($this->admin, fn () => Audit::record('order.exported', $this->order));
+it('still honours an explicit causedBy()', function () {
+    $other = User::create(['name' => 'Other']);
+    $this->actingAs($this->admin);
 
-    expect($log->actor->is($this->admin))->toBeTrue()
-        ->and(Actor::current())->toBeNull();
+    activity()->performedOn($this->order)->causedBy($other)->event('approved')->log('Approved');
+
+    $this->assertActivityLogged($this->order, 'approved', by: $other);
 });
 
-it('captures before and after of the last save', function () {
-    $this->order->update(['total' => 900]);
-
-    $log = $this->order->audit('order.repriced', ['reason' => 'discount'], withChanges: true);
-
-    expect($log->changes)->toBe(['before' => ['total' => 500], 'after' => ['total' => 900]]);
-});
-
-it('redacts sensitive keys at any depth', function () {
-    $log = Audit::record('staff.created', $this->admin, [
+it('redacts sensitive keys at any depth before saving', function () {
+    activity()->performedOn($this->order)->event('staff_created')->withProperties([
         'password' => 'secret123',
         'profile' => ['otp' => '4411', 'name' => 'Sara'],
-    ]);
+    ])->log('Staff created');
 
-    expect($log->metadata)->toBe([
+    expect(Activity::query()->latest('id')->first()->properties->toArray())->toBe([
         'password' => '[redacted]',
         'profile' => ['otp' => '[redacted]', 'name' => 'Sara'],
     ]);
 });
 
-it('refuses actions that are not dot.notation', function (string $action) {
-    Audit::record($action, $this->order);
-})->with(['refund', 'Order.Refunded', 'order refunded'])->throws(InvalidArgumentException::class);
+it('keeps activities immutable', function () {
+    $activity = activity()->performedOn($this->order)->event('flagged')->log('Flagged');
 
-it('refuses unsaved subjects', function () {
-    Audit::record('order.created', new Order(['status' => 'pending']));
-})->throws(InvalidArgumentException::class, 'has not been saved yet');
-
-it('keeps entries immutable', function () {
-    $log = Audit::record('order.flagged', $this->order);
-
-    expect(fn () => $log->update(['action' => 'order.cleared']))->toThrow(LogicException::class)
-        ->and(fn () => $log->delete())->toThrow(LogicException::class);
+    expect(fn () => $activity->update(['description' => 'changed']))->toThrow(LogicException::class)
+        ->and(fn () => $activity->delete())->toThrow(LogicException::class, 'activitylog:clean');
 });
 
-it('exposes a per-record trail, newest first', function () {
-    $this->order->audit('order.flagged');
-    $this->order->audit('order.cleared');
+it('ships assertions that say what was logged instead', function () {
+    activity()->performedOn($this->order)->event('flagged')->withProperties(['reason' => 'suspicious'])->log('Flagged');
 
-    expect($this->order->auditTrail->pluck('action')->all())->toBe(['order.cleared', 'order.flagged']);
-});
+    $this->assertActivityLogged($this->order, 'flagged', properties: ['reason' => 'suspicious']);
+    $this->assertActivityNotLogged($this->order, 'refunded');
 
-it('ships assertions that explain what was recorded instead', function () {
-    $this->actingAs($this->admin);
-    $this->order->audit('order.flagged', ['reason' => 'suspicious']);
-
-    $this->assertAudited($this->order, 'order.flagged', by: $this->admin, metadata: ['reason' => 'suspicious']);
-    $this->assertNotAudited($this->order, 'order.cleared');
-
-    expect(fn () => $this->assertAudited($this->order, 'order.refunded'))
-        ->toThrow(AssertionFailedError::class, 'Actions recorded in this test: order.flagged');
+    expect(fn () => $this->assertActivityLogged($this->order, 'refunded'))
+        ->toThrow(AssertionFailedError::class, 'Events logged for this subject: flagged');
 });

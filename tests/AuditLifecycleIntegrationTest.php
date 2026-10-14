@@ -8,19 +8,27 @@ use Mgamalhz\Foundation\Tests\Fixtures\User;
 
 uses(InteractsWithAudit::class);
 
-it('mirrors every transition into the audit log when both packages are installed', function () {
+it('logs every transition to the activity log', function () {
     $admin = User::create(['name' => 'Admin']);
     $this->actingAs($admin);
     $order = Order::create(['total' => 100]);
 
     $order->transitionTo(OrderStatus::Paid, reason: 'Card captured');
 
-    $this->assertAudited($order, 'lifecycle.transitioned', by: $admin, metadata: [
+    $this->assertActivityLogged($order, 'transitioned', by: $admin, properties: [
         'attribute' => 'status',
         'from' => 'pending',
         'to' => 'paid',
         'reason' => 'Card captured',
     ]);
+});
+
+it('logs system transitions without a causer', function () {
+    $order = Order::create(['total' => 100]);
+
+    $order->transitionTo(OrderStatus::Paid, actor: false);
+
+    $this->assertActivityLogged($order, 'transitioned', by: false);
 });
 
 it('can be switched off', function () {
@@ -29,10 +37,10 @@ it('can be switched off', function () {
 
     $order->transitionTo(OrderStatus::Paid);
 
-    $this->assertNotAudited($order, 'lifecycle.transitioned');
+    $this->assertActivityNotLogged($order, 'transitioned');
 });
 
-it('does not audit a transition that was rolled back', function () {
+it('does not log a transition that was rolled back', function () {
     $order = Order::create(['total' => 100]);
 
     try {
@@ -43,5 +51,5 @@ it('does not audit a transition that was rolled back', function () {
     } catch (RuntimeException) {
     }
 
-    $this->assertNotAudited($order, 'lifecycle.transitioned');
+    $this->assertActivityNotLogged($order, 'transitioned');
 });

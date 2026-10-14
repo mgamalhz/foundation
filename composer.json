@@ -1,19 +1,31 @@
 {
     "name": "mgamalhz/foundation",
-    "description": "Monorepo for the mgamalhz backend foundation packages (audit, lifecycle, ...). Not installed directly — require the individual packages.",
-    "type": "project",
+    "description": "Personal backend foundation for Laravel business platforms: lifecycle state machines, audit additions on spatie/laravel-activitylog, shared support, agent skills.",
+    "type": "library",
     "license": "MIT",
+    "authors": [
+        {
+            "name": "Mohamed Gamal",
+            "homepage": "https://mgamalhz.com"
+        }
+    ],
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
+        "illuminate/console": "^13.0",
         "illuminate/contracts": "^13.0",
         "illuminate/database": "^13.0",
+        "illuminate/events": "^13.0",
         "illuminate/support": "^13.0"
     },
     "require-dev": {
+        "laravel/pint": "^1.18",
         "orchestra/testbench": "^11.0",
         "pestphp/pest": "^4.0|^5.0",
         "pestphp/pest-plugin-laravel": "^4.0|^5.0",
-        "laravel/pint": "^1.18"
+        "spatie/laravel-activitylog": "^5.0"
+    },
+    "suggest": {
+        "spatie/laravel-activitylog": "Required for the audit additions (redaction, immutability, transition logging, test assertions)."
     },
     "autoload": {
         "psr-4": {

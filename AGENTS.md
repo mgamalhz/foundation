@@ -1,24 +1,27 @@
 # Working on this repository
 
-Monorepo of independent Laravel packages under `packages/*`. Each package has its
-own `composer.json` and is published separately; the root `composer.json` only
-exists to develop and test them together.
+One Composer package (`mgamalhz/foundation`) with its parts in `packages/*`.
+The parts stay in separate folders so they can be split later.
 
 ## Commands
 
-- `vendor/bin/pest` — run every package's tests (must stay green)
-- `vendor/bin/pest --testsuite=lifecycle` — one package
+- `vendor/bin/pest` — all tests (must stay green)
+- `vendor/bin/pest --testsuite=lifecycle` — one part
 - `vendor/bin/pint` — format before committing
+
+Requires PHP 8.4 and Laravel 13.
 
 ## Rules
 
-- A package may depend on `mgamalhz/support`, never on another feature package.
-  Cross-package behaviour goes through events and `class_exists()` checks
-  (see `AuditServiceProvider` listening for lifecycle events).
-- Every public behaviour has a test. Tests use the fixtures in `tests/Fixtures`.
-- Exception messages are part of the API: say what happened, what is allowed,
-  and what to do instead. Agents read them and fix their code from them.
-- When behaviour changes, update the package's skill in
-  `resources/boost/skills/*/SKILL.md` in the same commit — the skill is what
-  coding agents learn the package from.
-- No code copied from client projects. Designs and lessons only.
+- **Build on proven libraries.** Write code from scratch only where there is a
+  real gap (e.g. `lifecycle`: no maintained package locks rows or keeps history).
+- **Extend, don't wrap.** Projects keep using the library's own API
+  (`activity()`, `$user->can()`); we add redaction, safe defaults, assertions
+  and skills around it.
+- A part may depend on `support`, never on another part. Cross-part behaviour
+  goes through events and `class_exists()` checks.
+- Every public behaviour has a test, using the fixtures in `tests/Fixtures`.
+- Exception messages say what happened, what is allowed, and what to do instead.
+- When behaviour changes, update the part's skill in
+  `resources/boost/skills/*/SKILL.md` and `CATALOG.md` in the same commit.
+- Never copy code from client projects. Designs and lessons only.
