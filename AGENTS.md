@@ -25,3 +25,5 @@ Requires PHP 8.4 and Laravel 13.
 - When behaviour changes, update the part's skill in
   `resources/boost/skills/*/SKILL.md` and `CATALOG.md` in the same commit.
 - Never copy code from client projects. Designs and lessons only.
+- English only — code, comments, docs, skills and commit messages. No Arabic anywhere in this repository.
+- Commits are a single line, `type(module): message`, with no body or footer.
