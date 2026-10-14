@@ -1,0 +1,54 @@
+{
+    "name": "mgamalhz/foundation",
+    "description": "Monorepo for the mgamalhz backend foundation packages (audit, lifecycle, ...). Not installed directly — require the individual packages.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "illuminate/contracts": "^13.0",
+        "illuminate/database": "^13.0",
+        "illuminate/support": "^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^4.0|^5.0",
+        "pestphp/pest-plugin-laravel": "^4.0|^5.0",
+        "laravel/pint": "^1.18"
+    },
+    "autoload": {
+        "psr-4": {
+            "Mgamalhz\\Support\\": "packages/support/src/",
+            "Mgamalhz\\Audit\\": "packages/audit/src/",
+            "Mgamalhz\\Lifecycle\\": "packages/lifecycle/src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Mgamalhz\\Support\\Tests\\": "packages/support/tests/",
+            "Mgamalhz\\Audit\\Tests\\": "packages/audit/tests/",
+            "Mgamalhz\\Lifecycle\\Tests\\": "packages/lifecycle/tests/",
+            "Mgamalhz\\Foundation\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Mgamalhz\\Support\\SupportServiceProvider",
+                "Mgamalhz\\Audit\\AuditServiceProvider",
+                "Mgamalhz\\Lifecycle\\LifecycleServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "format": "pint"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

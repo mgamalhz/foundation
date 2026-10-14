@@ -1,0 +1,37 @@
+{
+    "name": "mgamalhz/lifecycle",
+    "description": "State machines for Eloquent models: declared transitions, row-locked changes, guards, full history and events. Ships an agent skill for Laravel Boost.",
+    "keywords": ["laravel", "state-machine", "workflow", "status", "lifecycle", "boost", "ai"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Mohamed Gamal",
+            "homepage": "https://mgamalhz.com"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "illuminate/console": "^13.0",
+        "illuminate/contracts": "^13.0",
+        "illuminate/database": "^13.0",
+        "illuminate/events": "^13.0",
+        "illuminate/support": "^13.0",
+        "mgamalhz/support": "^0.1"
+    },
+    "suggest": {
+        "mgamalhz/audit": "Mirrors every transition into the app-wide audit log automatically."
+    },
+    "autoload": {
+        "psr-4": {
+            "Mgamalhz\\Lifecycle\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Mgamalhz\\Lifecycle\\LifecycleServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable"
+}

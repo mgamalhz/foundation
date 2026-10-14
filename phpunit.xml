@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true">
+    <testsuites>
+        <testsuite name="support">
+            <directory>packages/support/tests</directory>
+        </testsuite>
+        <testsuite name="audit">
+            <directory>packages/audit/tests</directory>
+        </testsuite>
+        <testsuite name="lifecycle">
+            <directory>packages/lifecycle/tests</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>packages/support/src</directory>
+            <directory>packages/audit/src</directory>
+            <directory>packages/lifecycle/src</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="DB_CONNECTION" value="testing"/>
+    </php>
+</phpunit>
