@@ -3,6 +3,7 @@
 namespace Mgamalhz\Lifecycle\Testing;
 
 use BackedEnum;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Mgamalhz\Lifecycle\Models\StateTransition;
 use Mgamalhz\Support\Value;
@@ -22,10 +23,7 @@ trait InteractsWithLifecycle
         BackedEnum|UnitEnum|string $to,
         ?Model $by = null,
     ): StateTransition {
-        $query = StateTransition::query()
-            ->where('subject_type', $model->getMorphClass())
-            ->where('subject_id', $model->getKey())
-            ->where('to', Value::key($to));
+        $query = $this->transitionsOf($model)->where('to', Value::key($to));
 
         $from === null ? $query->whereNull('from') : $query->where('from', Value::key($from));
 
@@ -35,20 +33,26 @@ trait InteractsWithLifecycle
 
         $record = $query->latest('id')->first();
 
-        $timeline = StateTransition::query()
-            ->where('subject_type', $model->getMorphClass())
-            ->where('subject_id', $model->getKey())
-            ->orderBy('id')
-            ->get()
-            ->map(fn (StateTransition $t) => ($t->from ?? '∅').' → '.$t->to)
-            ->implode(', ') ?: 'no transitions';
-
-        Assert::assertNotNull(
-            $record,
-            sprintf('Expected %s to move [%s → %s]. Actual timeline: %s.', class_basename($model), Value::key($from) ?? '∅', Value::key($to), $timeline)
-        );
+        Assert::assertNotNull($record, sprintf(
+            'Expected %s to move [%s → %s]. Actual timeline: %s.',
+            class_basename($model), Value::key($from) ?? '∅', Value::key($to), $this->timelineOf($model)
+        ));
 
         return $record;
+    }
+
+    private function transitionsOf(Model $model): Builder
+    {
+        return StateTransition::query()
+            ->where('subject_type', $model->getMorphClass())
+            ->where('subject_id', $model->getKey());
+    }
+
+    private function timelineOf(Model $model): string
+    {
+        return $this->transitionsOf($model)->orderBy('id')->get()
+            ->map(fn (StateTransition $t) => ($t->from ?? '∅').' → '.$t->to)
+            ->implode(', ') ?: 'no transitions';
     }
 
     /** @param class-string|Model $model */

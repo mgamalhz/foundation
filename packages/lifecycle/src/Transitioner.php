@@ -38,83 +38,101 @@ class Transitioner
         ?Closure $mutate = null,
         Model|false|null $actor = null,
     ): Model {
-        $machine = $model::stateMachine();
-        $attribute = $machine->attribute();
-        $toKey = Value::key($to);
+        $this->assertReady($model, Value::key($to));
+        $actor = Actor::resolve($actor);
+
+        return DB::connection($model->getConnectionName())->transaction(function () use ($model, $to, $reason, $metadata, $mutate, $actor) {
+            $locked = $this->lockedCopy($model);
+            $from = $this->assertAllowed($model, $locked, Value::key($to));
+
+            $this->apply($locked, $to, $mutate);
+
+            $record = StateTransition::record($model, $from, Value::key($to), $actor, $reason, $metadata);
+
+            // Bring the caller's instance in step with what was actually written.
+            $model->setRawAttributes($locked->getAttributes(), sync: true);
+
+            event(new StateTransitioned($model, $record->attribute, $from, $record->to, $actor, $reason, $metadata, $record));
+
+            return $model;
+        });
+    }
+
+    /** Checks that need no lock: the record is saved, clean, and the target state exists. */
+    private function assertReady(Model $model, string $to): void
+    {
+        $name = class_basename($model);
 
         if (! $model->exists) {
-            throw new LogicException('Save '.class_basename($model).' before transitioning it; new records start in an initial state.');
+            throw new LogicException("Save {$name} before transitioning it; new records start in an initial state.");
         }
 
         if ($model->isDirty()) {
             $dirty = implode(', ', array_keys($model->getDirty()));
 
             throw new LogicException(
-                class_basename($model)." has unsaved changes [{$dirty}]. transitionTo() writes from a freshly locked row, so they would be lost. "
+                "{$name} has unsaved changes [{$dirty}]. transitionTo() writes from a freshly locked row, so they would be lost. "
                 .'Save them first, or set them inside the transition: transitionTo($state, mutate: fn ($m) => $m->field = $value).'
             );
         }
 
-        if (! $machine->hasState($toKey)) {
-            throw InvalidTransition::unknownState($model, $attribute, $toKey, $machine->states());
+        $machine = $model::stateMachine();
+
+        if (! $machine->hasState($to)) {
+            throw InvalidTransition::unknownState($model, $machine->attribute(), $to, $machine->states());
+        }
+    }
+
+    /** @return Model&HasLifecycle */
+    private function lockedCopy(Model $model): Model
+    {
+        return $model->newQueryWithoutScopes()
+            ->whereKey($model->getKey())
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    /**
+     * Validate the move against the locked (current) state and run guards.
+     *
+     * @return string|null the state being left
+     */
+    private function assertAllowed(Model $model, Model $locked, string $to): ?string
+    {
+        $machine = $model::stateMachine();
+        $attribute = $machine->attribute();
+        $from = Value::key($locked->getAttribute($attribute));
+
+        if (! $machine->canTransition($from, $to)) {
+            throw InvalidTransition::between($model, $attribute, $from, $to, $machine->allowedFrom($from));
         }
 
-        $actor = Actor::resolve($actor);
+        foreach ($machine->guardsFor($to) as $guard) {
+            $result = $guard($locked);
 
-        return DB::connection($model->getConnectionName())->transaction(function () use ($model, $machine, $attribute, $to, $toKey, $reason, $metadata, $mutate, $actor) {
-            /** @var Model&HasLifecycle $locked */
-            $locked = $model->newQueryWithoutScopes()
-                ->whereKey($model->getKey())
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $from = Value::key($locked->getAttribute($attribute));
-
-            if (! $machine->canTransition($from, $toKey)) {
-                throw InvalidTransition::between($model, $attribute, $from, $toKey, $machine->allowedFrom($from));
+            if ($result !== true) {
+                throw TransitionDenied::make($model, $attribute, $to, is_string($result) ? $result : null);
             }
+        }
 
-            foreach ($machine->guardsFor($toKey) as $guard) {
-                $result = $guard($locked);
+        return $from;
+    }
 
-                if ($result !== true) {
-                    throw TransitionDenied::make($model, $attribute, $toKey, is_string($result) ? $result : null);
-                }
-            }
+    /** @param  Model&HasLifecycle  $locked */
+    private function apply(Model $locked, BackedEnum|UnitEnum|string $to, ?Closure $mutate): void
+    {
+        $locked->setAttribute($locked::stateMachine()->attribute(), $to);
 
-            $locked->setAttribute($attribute, $to);
+        if ($mutate !== null) {
+            $mutate($locked);
+        }
 
-            if ($mutate !== null) {
-                $mutate($locked);
-            }
+        $locked->lifecycleTransitioning = true;
 
-            $locked->lifecycleTransitioning = true;
-
-            try {
-                $locked->save();
-            } finally {
-                $locked->lifecycleTransitioning = false;
-            }
-
-            $record = StateTransition::query()->create([
-                'subject_type' => $model->getMorphClass(),
-                'subject_id' => $model->getKey(),
-                'attribute' => $attribute,
-                'from' => $from,
-                'to' => $toKey,
-                'actor_type' => $actor?->getMorphClass(),
-                'actor_id' => $actor?->getKey(),
-                'reason' => $reason,
-                'metadata' => $metadata === [] ? null : $metadata,
-                'created_at' => now(),
-            ]);
-
-            // Bring the caller's instance in step with what was actually written.
-            $model->setRawAttributes($locked->getAttributes(), sync: true);
-
-            event(new StateTransitioned($model, $attribute, $from, $toKey, $actor, $reason, $metadata, $record));
-
-            return $model;
-        });
+        try {
+            $locked->save();
+        } finally {
+            $locked->lifecycleTransitioning = false;
+        }
     }
 }

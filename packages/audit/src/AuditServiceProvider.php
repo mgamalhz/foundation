@@ -66,22 +66,23 @@ class AuditServiceProvider extends ServiceProvider
         });
     }
 
+    private function redact(Model $activity): void
+    {
+        foreach (['properties', 'attribute_changes'] as $attribute) {
+            $value = $activity->getAttribute($attribute);
+
+            if ($value !== null) {
+                $activity->setAttribute($attribute, Value::redact(collect($value)->toArray(), config('audit.redact', [])));
+            }
+        }
+    }
+
     private function guardActivities(): void
     {
         /** @var class-string<Model> $model */
         $model = config('activitylog.activity_model');
 
-        $model::saving(function (Model $activity) {
-            $keys = config('audit.redact', []);
-
-            foreach (['properties', 'attribute_changes'] as $attribute) {
-                $value = $activity->getAttribute($attribute);
-
-                if ($value !== null) {
-                    $activity->setAttribute($attribute, Value::redact(collect($value)->toArray(), $keys));
-                }
-            }
-        });
+        $model::saving(fn (Model $activity) => $this->redact($activity));
 
         $model::updating(function () {
             if (config('audit.immutable', true)) {

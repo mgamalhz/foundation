@@ -38,58 +38,56 @@ trait HasLifecycle
 
     public static function bootHasLifecycle(): void
     {
-        static::creating(function (Model $model) {
-            $machine = static::stateMachine();
-            $attribute = $machine->attribute();
-            $initial = $machine->initialStates();
+        static::creating(fn (Model $model) => static::startInInitialState($model));
+        static::created(fn (Model $model) => static::recordBirth($model));
+        static::updating(fn (Model $model) => static::preventDirectMutation($model));
+    }
 
-            if ($initial === []) {
-                return;
-            }
+    /** Default a new record to the first initial state, or refuse a non-initial one. */
+    protected static function startInInitialState(Model $model): void
+    {
+        $machine = static::stateMachine();
+        $attribute = $machine->attribute();
+        $initial = $machine->initialStates();
 
-            if ($model->getAttribute($attribute) === null) {
-                $model->setAttribute($attribute, $machine->toCase($initial[0]));
+        if ($initial === []) {
+            return;
+        }
 
-                return;
-            }
+        if ($model->getAttribute($attribute) === null) {
+            $model->setAttribute($attribute, $machine->toCase($initial[0]));
 
-            $state = Value::key($model->getAttribute($attribute));
+            return;
+        }
 
-            if (static::$lifecycleGuardBypass === 0 && config('lifecycle.strict', true) && ! in_array($state, $initial, true)) {
-                throw InvalidInitialState::make($model, $attribute, $state, $initial);
-            }
-        });
+        $state = Value::key($model->getAttribute($attribute));
 
-        static::created(function (Model $model) {
-            if (! config('lifecycle.record_initial', true)) {
-                return;
-            }
+        if (static::lifecycleIsStrict() && ! in_array($state, $initial, true)) {
+            throw InvalidInitialState::make($model, $attribute, $state, $initial);
+        }
+    }
 
-            $attribute = static::stateMachine()->attribute();
-            $actor = Actor::current();
+    protected static function recordBirth(Model $model): void
+    {
+        if (config('lifecycle.record_initial', true)) {
+            $state = Value::key($model->getAttribute(static::stateMachine()->attribute()));
 
-            StateTransition::query()->create([
-                'subject_type' => $model->getMorphClass(),
-                'subject_id' => $model->getKey(),
-                'attribute' => $attribute,
-                'from' => null,
-                'to' => Value::key($model->getAttribute($attribute)),
-                'actor_type' => $actor?->getMorphClass(),
-                'actor_id' => $actor?->getKey(),
-                'created_at' => now(),
-            ]);
-        });
+            StateTransition::record($model, null, $state, Actor::current());
+        }
+    }
 
-        static::updating(function (Model $model) {
-            $attribute = static::stateMachine()->attribute();
+    protected static function preventDirectMutation(Model $model): void
+    {
+        $attribute = static::stateMachine()->attribute();
 
-            if ($model->isDirty($attribute)
-                && ! $model->lifecycleTransitioning
-                && static::$lifecycleGuardBypass === 0
-                && config('lifecycle.strict', true)) {
-                throw DirectStateMutation::make($model, $attribute);
-            }
-        });
+        if ($model->isDirty($attribute) && ! $model->lifecycleTransitioning && static::lifecycleIsStrict()) {
+            throw DirectStateMutation::make($model, $attribute);
+        }
+    }
+
+    protected static function lifecycleIsStrict(): bool
+    {
+        return static::$lifecycleGuardBypass === 0 && config('lifecycle.strict', true);
     }
 
     /**

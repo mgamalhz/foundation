@@ -40,6 +40,27 @@ class StateTransition extends Model
         static::deleting(fn () => throw new LogicException('State transitions are history and cannot be deleted.'));
     }
 
+    /**
+     * The single place a history row is written.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
+    public static function record(Model $subject, ?string $from, string $to, ?Model $actor, ?string $reason = null, array $metadata = []): self
+    {
+        return static::query()->create([
+            'subject_type' => $subject->getMorphClass(),
+            'subject_id' => $subject->getKey(),
+            'attribute' => $subject::stateMachine()->attribute(),
+            'from' => $from,
+            'to' => $to,
+            'actor_type' => $actor?->getMorphClass(),
+            'actor_id' => $actor?->getKey(),
+            'reason' => $reason,
+            'metadata' => $metadata === [] ? null : $metadata,
+            'created_at' => now(),
+        ]);
+    }
+
     public function subject(): MorphTo
     {
         return $this->morphTo();
